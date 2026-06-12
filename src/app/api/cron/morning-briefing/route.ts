@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 import { sendMorningBriefing } from "@/lib/telegram/bot";
 
 // Called by Vercel Cron (vercel.json) every weekday at 8:00 AM

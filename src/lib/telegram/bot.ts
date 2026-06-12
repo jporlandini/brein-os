@@ -1,15 +1,14 @@
 /**
  * Telegram Bot — Brain OS
- * Handles both webhook (pull) and morning push (cron).
+ * Lazy initialization: Telegraf is only instantiated on first use,
+ * so importing this module at build time won't throw missing env errors.
  */
 
-import { Telegraf, Context } from "telegraf";
+import { Telegraf, type Context } from "telegraf";
 import { runGuardian } from "@/lib/agent/guardian";
 import { getTasksForOperator } from "@/lib/notion/client";
 import { db, users } from "@/lib/db";
 import { eq } from "drizzle-orm";
-
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN!);
 
 // ── Auth helper ───────────────────────────────────────────────
 
@@ -22,44 +21,13 @@ async function getUserFromTelegram(chatId: number) {
   return user ?? null;
 }
 
-// ── Commands ──────────────────────────────────────────────────
+// ── Status command handler ────────────────────────────────────
 
-bot.start(async (ctx: Context) => {
-  await ctx.reply(
-    "⚡ Brain OS Bot activo.\n\nComandos disponibles:\n" +
-    "/misiones — Ver tus quests del día\n" +
-    "/completar [ID] — Marcar quest como entregada\n" +
-    "/progreso [ID] — Marcar quest en progreso\n" +
-    "/bloquear [ID] — Marcar quest como bloqueada"
-  );
-});
-
-bot.command("misiones", async (ctx: Context) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
-
-  const user = await getUserFromTelegram(chatId);
-  if (!user || !user.notionOperatorId) {
-    return ctx.reply("❌ Tu cuenta de Telegram no está vinculada. Contacta al admin.");
-  }
-
-  const result = await runGuardian({
-    channel:           "telegram",
-    userId:            user.id,
-    userRole:          user.role,
-    notionOperatorId:  user.notionOperatorId,
-    rawInput:          "mostrar mis tareas pendientes",
-  });
-
-  await ctx.reply(result.response);
-});
-
-// Generic status-change handler
 async function handleStatusCommand(ctx: Context, status: string) {
   const chatId = ctx.chat?.id;
   if (!chatId) return;
 
-  const msg = ctx.message as any;
+  const msg = ctx.message as { text?: string } | undefined;
   const parts = msg?.text?.split(" ") ?? [];
   const taskId = parts[1];
 
@@ -68,9 +36,7 @@ async function handleStatusCommand(ctx: Context, status: string) {
   }
 
   const user = await getUserFromTelegram(chatId);
-  if (!user) {
-    return ctx.reply("❌ Cuenta no vinculada.");
-  }
+  if (!user) return ctx.reply("❌ Cuenta no vinculada.");
 
   const result = await runGuardian({
     channel:           "telegram",
@@ -83,33 +49,77 @@ async function handleStatusCommand(ctx: Context, status: string) {
   await ctx.reply(result.response);
 }
 
-bot.command("completar",  (ctx) => handleStatusCommand(ctx, "entregada"));
-bot.command("progreso",   (ctx) => handleStatusCommand(ctx, "en_progreso"));
-bot.command("bloquear",   (ctx) => handleStatusCommand(ctx, "bloqueada"));
+// ── Bot factory ───────────────────────────────────────────────
 
-// Natural language fallback
-bot.on("text", async (ctx: Context) => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
+function createBot(): Telegraf {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error("TELEGRAM_BOT_TOKEN is not set");
 
-  const user = await getUserFromTelegram(chatId);
-  if (!user) return ctx.reply("❌ Cuenta no vinculada.");
+  const instance = new Telegraf(token);
 
-  const msg = ctx.message as any;
-  const result = await runGuardian({
-    channel:           "telegram",
-    userId:            user.id,
-    userRole:          user.role,
-    notionOperatorId:  user.notionOperatorId ?? undefined,
-    rawInput:          msg.text,
+  instance.start(async (ctx) => {
+    await ctx.reply(
+      "⚡ Brain OS Bot activo.\n\n" +
+      "/misiones — Ver tus quests del día\n" +
+      "/completar [ID] — Marcar como entregada\n" +
+      "/progreso [ID] — Marcar en progreso\n" +
+      "/bloquear [ID] — Marcar como bloqueada"
+    );
   });
 
-  await ctx.reply(result.response);
-});
+  instance.command("misiones", async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
 
-export { bot };
+    const user = await getUserFromTelegram(chatId);
+    if (!user?.notionOperatorId) {
+      return ctx.reply("❌ Tu cuenta no está vinculada. Contacta al admin.");
+    }
 
-// ── Morning push (llamado desde cron route) ───────────────────
+    const result = await runGuardian({
+      channel:           "telegram",
+      userId:            user.id,
+      userRole:          user.role,
+      notionOperatorId:  user.notionOperatorId,
+      rawInput:          "mostrar mis tareas pendientes",
+    });
+
+    await ctx.reply(result.response);
+  });
+
+  instance.command("completar", (ctx) => handleStatusCommand(ctx, "entregada"));
+  instance.command("progreso",  (ctx) => handleStatusCommand(ctx, "en_progreso"));
+  instance.command("bloquear",  (ctx) => handleStatusCommand(ctx, "bloqueada"));
+
+  instance.on("text", async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+
+    const user = await getUserFromTelegram(chatId);
+    if (!user) return ctx.reply("❌ Cuenta no vinculada.");
+
+    const msg = ctx.message as { text?: string };
+    const result = await runGuardian({
+      channel:           "telegram",
+      userId:            user.id,
+      userRole:          user.role,
+      notionOperatorId:  user.notionOperatorId ?? undefined,
+      rawInput:          msg.text ?? "",
+    });
+
+    await ctx.reply(result.response);
+  });
+
+  return instance;
+}
+
+let _bot: Telegraf | null = null;
+export function getBot(): Telegraf {
+  if (!_bot) _bot = createBot();
+  return _bot;
+}
+
+// ── Morning push ──────────────────────────────────────────────
 
 export async function sendMorningBriefing() {
   const operators = await db
@@ -127,9 +137,9 @@ export async function sendMorningBriefing() {
       const main = tasks.filter((t) => t.priority === "main");
       const side = tasks.filter((t) => t.priority === "side");
 
-      const lines = [
+      const lines: string[] = [
         `☀️ Buenos días, ${op.displayName ?? "Operador"}!`,
-        `🎮 TUS MISIONES DE HOY\n`,
+        "🎮 TUS MISIONES DE HOY\n",
       ];
 
       if (main.length) {
@@ -138,7 +148,6 @@ export async function sendMorningBriefing() {
           lines.push(`  • [${t.id}] ${t.title}\n    Cliente: ${t.client} · Entrega: ${t.dateDue}`)
         );
       }
-
       if (side.length) {
         lines.push("\n🛡 SIDE QUESTS:");
         side.forEach((t) =>
@@ -147,8 +156,7 @@ export async function sendMorningBriefing() {
       }
 
       lines.push("\nUsa /completar [ID] para actualizar estados.");
-
-      await bot.telegram.sendMessage(op.telegramChatId, lines.join("\n"));
+      await getBot().telegram.sendMessage(op.telegramChatId, lines.join("\n"));
     } catch (err) {
       console.error(`Error sending briefing to ${op.email}:`, err);
     }

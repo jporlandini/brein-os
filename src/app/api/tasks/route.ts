@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 import { auth } from "@/lib/auth";
 import { getTasksForOperator } from "@/lib/notion/client";
 import { db, users } from "@/lib/db";

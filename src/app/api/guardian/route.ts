@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 import { auth } from "@/lib/auth";
 import { runGuardian } from "@/lib/agent/guardian";
 import { db, users, auditLog } from "@/lib/db";

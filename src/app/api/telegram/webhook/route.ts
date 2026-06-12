@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { bot } from "@/lib/telegram/bot";
+import { getBot } from "@/lib/telegram/bot";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const secret = req.headers.get("X-Telegram-Bot-Api-Secret-Token");
@@ -8,6 +10,6 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  await bot.handleUpdate(body);
+  await getBot().handleUpdate(body);
   return NextResponse.json({ ok: true });
 }

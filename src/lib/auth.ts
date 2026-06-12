@@ -3,8 +3,10 @@ import Credentials from "next-auth/providers/credentials";
 import { db, users } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { authConfig } from "./auth.config";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   providers: [
     Credentials({
       credentials: {
@@ -20,8 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           .where(eq(users.email, credentials.email as string))
           .limit(1);
 
-        if (!user) return null;
-        if (user.status !== "activo") return null;
+        if (!user || user.status !== "activo") return null;
 
         const valid = await bcrypt.compare(
           credentials.password as string,
@@ -40,25 +41,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     }),
   ],
-  callbacks: {
-    jwt({ token, user }) {
-      if (user) {
-        token.id       = (user as any).id;
-        token.role     = (user as any).role;
-        token.notionOpId = (user as any).notionOpId;
-      }
-      return token;
-    },
-    session({ session, token }) {
-      if (session.user) {
-        (session.user as any).id       = token.id;
-        (session.user as any).role     = token.role;
-        (session.user as any).notionOpId = token.notionOpId;
-      }
-      return session;
-    },
-  },
-  pages: {
-    signIn: "/login",
-  },
 });
