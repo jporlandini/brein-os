@@ -17,8 +17,9 @@ export const authConfig: NextAuthConfig = {
       const isOperatorPath = nextUrl.pathname.startsWith("/operator");
       const isPortalPath   = nextUrl.pathname.startsWith("/portal");
       const isApiPath      = nextUrl.pathname.startsWith("/api");
+      const isDemoPath     = nextUrl.pathname === "/" || nextUrl.pathname.startsWith("/portal-demo");
 
-      if (isApiPath) return true;
+      if (isApiPath || isDemoPath) return true;
 
       if (isLoggedIn && isLoginPage) {
         return Response.redirect(

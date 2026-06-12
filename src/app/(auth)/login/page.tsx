@@ -141,14 +141,14 @@ export default function LoginPage() {
         <div className="grid grid-cols-2 gap-2.5">
           <button
             type="button"
-            onClick={() => router.push("/operator")}
+            onClick={() => router.push("/")}
             className="h-9 rounded-lg font-mono text-[11px] text-slate-500 border border-slate-800 bg-transparent hover:bg-slate-900 hover:text-slate-300 hover:border-slate-700 transition-all"
           >
             Ver Operador
           </button>
           <button
             type="button"
-            onClick={() => router.push("/portal")}
+            onClick={() => router.push("/portal-demo")}
             className="h-9 rounded-lg font-mono text-[11px] text-slate-500 border border-slate-800 bg-transparent hover:bg-slate-900 hover:text-slate-300 hover:border-slate-700 transition-all"
           >
             Ver Cliente
